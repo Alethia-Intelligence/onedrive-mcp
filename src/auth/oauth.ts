@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { randomBytes } from "node:crypto";
+import { randomBytes, createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import open from "open";
@@ -21,6 +21,14 @@ const TOKEN_PATH = path.join(TOKEN_DIR, "tokens.json");
 
 export function getTokenPath(): string {
   return TOKEN_PATH;
+}
+
+function generateCodeVerifier(): string {
+  return randomBytes(32).toString("base64url");
+}
+
+function generateCodeChallenge(verifier: string): string {
+  return createHash("sha256").update(verifier).digest("base64url");
 }
 
 export function loadStoredTokens(): StoredTokens | null {
@@ -49,7 +57,6 @@ export async function refreshAccessToken(
     grant_type: "refresh_token",
     refresh_token: tokens.refresh_token,
     client_id: tokens.client_id,
-    client_secret: tokens.client_secret,
     scope: SCOPES.join(" "),
   });
 
@@ -79,14 +86,12 @@ export async function refreshAccessToken(
 
 export async function runAuthFlow(): Promise<void> {
   const clientId = process.env.MICROSOFT_CLIENT_ID;
-  const clientSecret = process.env.MICROSOFT_CLIENT_SECRET;
 
-  if (!clientId || !clientSecret) {
+  if (!clientId) {
     logger.error(
-      "Missing MICROSOFT_CLIENT_ID or MICROSOFT_CLIENT_SECRET environment variables.\n" +
-        "Set them before running auth:\n" +
-        "  export MICROSOFT_CLIENT_ID=your_client_id\n" +
-        "  export MICROSOFT_CLIENT_SECRET=your_client_secret"
+      "Missing MICROSOFT_CLIENT_ID environment variable.\n" +
+        "Set it before running auth:\n" +
+        "  export MICROSOFT_CLIENT_ID=your_client_id"
     );
     process.exit(1);
   }
@@ -94,6 +99,8 @@ export async function runAuthFlow(): Promise<void> {
   const port = 8888;
   const redirectUri = `http://localhost:${port}/callback`;
   const state = randomBytes(16).toString("hex");
+  const codeVerifier = generateCodeVerifier();
+  const codeChallenge = generateCodeChallenge(codeVerifier);
 
   const authUrl = new URL(AUTHORIZE_URL);
   authUrl.searchParams.set("client_id", clientId);
@@ -102,6 +109,8 @@ export async function runAuthFlow(): Promise<void> {
   authUrl.searchParams.set("scope", SCOPES.join(" "));
   authUrl.searchParams.set("state", state);
   authUrl.searchParams.set("response_mode", "query");
+  authUrl.searchParams.set("code_challenge", codeChallenge);
+  authUrl.searchParams.set("code_challenge_method", "S256");
 
   return new Promise<void>((resolve, reject) => {
     const server = createServer(async (req, res) => {
@@ -148,7 +157,7 @@ export async function runAuthFlow(): Promise<void> {
           code,
           redirect_uri: redirectUri,
           client_id: clientId,
-          client_secret: clientSecret,
+          code_verifier: codeVerifier,
           scope: SCOPES.join(" "),
         });
 
@@ -174,7 +183,6 @@ export async function runAuthFlow(): Promise<void> {
           refresh_token: tokenData.refresh_token!,
           expires_at: Date.now() + tokenData.expires_in * 1000,
           client_id: clientId,
-          client_secret: clientSecret,
         };
 
         saveTokens(storedTokens);

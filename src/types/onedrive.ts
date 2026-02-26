@@ -88,7 +88,6 @@ export interface StoredTokens {
   refresh_token: string;
   expires_at: number;
   client_id: string;
-  client_secret: string;
 }
 
 export interface GraphTokenResponse {

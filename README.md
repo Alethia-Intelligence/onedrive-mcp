@@ -15,19 +15,24 @@ A Model Context Protocol (MCP) server that provides Claude with tools to interac
 3. Fill in the details:
    - **Name:** anything (e.g., "OneDrive MCP")
    - **Supported account types:** "Accounts in any organizational directory and personal Microsoft accounts"
-   - **Redirect URI:** Select **Web** and enter `http://127.0.0.1:8888/callback`
 4. Click **Register**
 5. On the app overview page, copy the **Application (client) ID**
-6. Go to **Certificates & secrets** → **New client secret** → copy the secret **Value**
+6. Go to **Authentication**:
+   - Click **Add a platform** → **Mobile and desktop applications**
+   - Enter custom redirect URI: `http://localhost:8888/callback`
+   - Scroll to bottom → set **Allow public client flows** to **Yes**
+   - Click **Save**
 7. Go to **API permissions** → **Add a permission** → **Microsoft Graph** → **Delegated permissions** and add:
-   - `Files.ReadWrite.All`
+   - `Files.ReadWrite`
    - `User.Read`
    - `offline_access`
+
+> **Note:** `Files.ReadWrite` only requires user consent. If you need access to files shared with you by others, use `Files.ReadWrite.All` instead (may require admin consent in enterprise tenants).
 
 ## Installation
 
 ```bash
-git clone https://github.com/popand/onedrive-mcp.git
+git clone https://github.com/Alethia-Intelligence/onedrive-mcp.git
 cd onedrive-mcp
 npm install
 npm run build
@@ -35,15 +40,14 @@ npm run build
 
 ## Authentication
 
-Set your Azure app credentials and run the auth flow:
+This server uses OAuth 2.0 with PKCE — no client secret needed, just your client ID.
 
 ```bash
 export MICROSOFT_CLIENT_ID=your_client_id
-export MICROSOFT_CLIENT_SECRET=your_client_secret
 npm run auth
 ```
 
-This opens a browser window for Microsoft login. After approval, tokens are saved to `~/.onedrive-mcp/tokens.json` (auto-refreshed on expiry).
+This opens a browser window for Microsoft login. After approval, tokens are saved to `~/.onedrive-mcp/tokens.json` and auto-refresh on expiry.
 
 ## Configuration
 
@@ -58,8 +62,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
       "command": "node",
       "args": ["/path/to/onedrive-mcp/dist/index.js"],
       "env": {
-        "MICROSOFT_CLIENT_ID": "your_client_id",
-        "MICROSOFT_CLIENT_SECRET": "your_client_secret"
+        "MICROSOFT_CLIENT_ID": "your_client_id"
       }
     }
   }
@@ -68,7 +71,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ### Claude Code
 
-Add to your project's `.mcp.json`:
+Add to `~/.claude/.mcp.json` (global) or your project's `.mcp.json`:
 
 ```json
 {
@@ -77,8 +80,7 @@ Add to your project's `.mcp.json`:
       "command": "node",
       "args": ["/path/to/onedrive-mcp/dist/index.js"],
       "env": {
-        "MICROSOFT_CLIENT_ID": "your_client_id",
-        "MICROSOFT_CLIENT_SECRET": "your_client_secret"
+        "MICROSOFT_CLIENT_ID": "your_client_id"
       }
     }
   }
@@ -115,13 +117,25 @@ Ask Claude things like:
 ## Troubleshooting
 
 **"No stored tokens found"**
-Run `npm run auth` with `MICROSOFT_CLIENT_ID` and `MICROSOFT_CLIENT_SECRET` set as environment variables.
+Run `npm run auth` with `MICROSOFT_CLIENT_ID` set as an environment variable.
 
 **"Token refresh failed"**
 Your refresh token may have expired. Re-run `npm run auth` to re-authorize.
 
 **"Insufficient permissions"**
-Ensure your Azure app has `Files.ReadWrite.All`, `User.Read`, and `offline_access` permissions. You may need to re-consent by running `npm run auth` again.
+Ensure your Azure app has `Files.ReadWrite`, `User.Read`, and `offline_access` permissions. You may need to re-consent by running `npm run auth` again.
+
+**"AADSTS50011: Redirect URI mismatch"**
+Make sure your Azure app has `http://localhost:8888/callback` configured as a **Mobile and desktop applications** redirect URI (not Web).
+
+**"AADSTS7000218: client_assertion or client_secret required"**
+Your app is still configured as a confidential client. In Azure portal, go to **Authentication** → set **Allow public client flows** to **Yes**, and ensure the redirect URI is under **Mobile and desktop applications** (not Web).
+
+**"AADSTS50194: not configured as multi-tenant"**
+Go to **Authentication** → change **Supported account types** to "Accounts in any organizational directory and personal Microsoft accounts".
+
+**"Need admin approval"**
+You're using `Files.ReadWrite.All` which requires admin consent in enterprise tenants. Switch to `Files.ReadWrite` (user-only files) or ask your admin to grant consent.
 
 **"Port 8888 already in use"**
 Another process is using port 8888. Stop it or wait a moment and try `npm run auth` again.
